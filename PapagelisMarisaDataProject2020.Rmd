@@ -1,0 +1,292 @@
+---
+title: "Analyzing Primary Languages within Tech Goes Home"
+author: "Marisa Papagelis"
+date: 'Last updated: July 23, 2020'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up
+## Initialize packages
+```{r packages, warning = FALSE, message=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(tidyverse)
+library(stringr) #part of tidyverse
+```
+
+## Load data
+```{r data, warning = FALSE}
+#Read-in data report pulled from Salesforce
+setwd("/Users/marisapapagelis/Desktop/college/TGH")
+d<- read.csv(file="MarisaDataProject.csv", header = TRUE, stringsAsFactors=FALSE,na.strings=c("","NA"))
+#Remove identifying columns that aren't necessary in data frame or for data analysis
+d <- d[,4:ncol(d)]
+```
+
+#Clean data 
+```{r clean, warning = FALSE}
+#Rename column titles for easier use
+names(d)[names(d) == "Course.Hours.Total"] <- "course_hours_total"
+names(d)[names(d) == "Course.Type"] <- "course_type"
+names(d)[names(d) == "Child.s.Grade"] <- "childs_grade"
+names(d)[names(d) == "Employment.Status"] <- "employment_status"
+names(d)[names(d) == "Household.Income.Level"] <- "household_income_level"
+names(d)[names(d) == "Student..Primary.Language"] <- "student_primary_language"
+names(d)[names(d) == "Student..Grade"] <- "student_grade"
+names(d)[names(d) == "Year"] <- "year"
+
+#For numeric calculations, leave all NA in data frame. For simplicity during analysis, categorize all K0, K1, K2, and K3 to "grade 0"
+d$childs_grade[is.na(d$childs_grade)] <- NA
+d$student_grade[is.na(d$student_grade)] <- NA
+d$childs_grade[d$childs_grade == "K0"] <- 0
+d$student_grade[d$student_grade == "K0"] <- 0
+d$childs_grade[d$childs_grade == "K1"] <- 0
+d$student_grade[d$student_grade == "K1"] <- 0
+d$childs_grade[d$childs_grade == "K2"] <- 0
+d$student_grade[d$student_grade == "K2"] <- 0
+d$childs_grade[d$childs_grade == "K3"] <- 0
+d$student_grade[d$student_grade == "K3"] <- 0
+
+#change character type to numeric type
+d$childs_grade = as.numeric(d$childs_grade) 
+d$student_grade = as.numeric(d$student_grade)
+#to use to change back to factor for later calculations
+#d$student_grade = as.factor(d$student_grade)
+#d$student_grade = as.factor(d$childs_grade)
+
+#create new variable grade and merge contents of childs_grade and student_grade
+d$grade<- rep(NA, nrow(d))
+d$grade[is.na(d$grade)] <- 0
+d$grade = d$childs_grade + d$student_grade
+
+#clean household income level - when more than one bucket chosen, choose first bucket listed for simplicity
+d$household_income_level[d$household_income_level == "Between $20,000 - $24,999, Between $25,000 - $29,999"] <- "Between $20,000 - $24,999"
+d$household_income_level[d$household_income_level == "Between $20,000 - $24,999, Between $35,000 - $39,999"] <- "Between $20,000 - $24,999"
+d$household_income_level[d$household_income_level == "Between $25,000 - $29,999, Between $35,000 - $39,999"] <- "Between $25,000 - $29,999"
+d$household_income_level[d$household_income_level == "Between $25,000 - $29,999, Between $40,000 - $44,999"] <- "Between $25,000 - $29,999"
+d$household_income_level[d$household_income_level == "Between $30,000 - $34,999, Between $35,000 - $39,999"] <- "Between $30,000 - $34,999"
+d$household_income_level[d$household_income_level == "Under $20,000, Between $20,000 - $24,999"] <- "Under $20,000"
+
+#create new variable log income for numeric calculations rather than categorical
+#use upper value (+.01) for numeric values. use $75000 for over $50000
+d$log_household_income_level<- rep(NA, nrow(d))
+d$log_household_income_level[d$household_income_level == "Under $20,000"] <- 20000
+d$log_household_income_level[d$household_income_level == "Between $20,000 - $24,999"] <- 25000
+d$log_household_income_level[d$household_income_level == "Between $25,000 - $29,999"] <- 30000
+d$log_household_income_level[d$household_income_level == "Between $30,000 - $34,999"] <- 35000
+d$log_household_income_level[d$household_income_level == "Between $35,000 - $39,999"] <- 40000
+d$log_household_income_level[d$household_income_level == "Between $40,000 - $44,999"] <- 50000
+d$log_household_income_level[d$household_income_level == "Over $50,000"] <- 75000
+#d$log_household_income_level = log(d$log_household_income_level) #convert values to logs
+d$log_household_income_level = as.numeric(d$log_household_income_level) #convert variable to numeric type 
+
+#clean primary language variable to only show primary, or first inputted language
+#slight selection bias because languages are listed in alphabetical language (i.e. English; French; Haitian Creole is put in the English category)
+d$student_primary_language[d$student_primary_language == "Cantonese; English"] <- "Cantonese"
+d$student_primary_language[d$student_primary_language == "Cantonese; Mandarin"] <- "Cantonese"
+d$student_primary_language[d$student_primary_language == "English; French; Haitian Creole"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; French; Other"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; Mandarin"] <- "English"
+d$student_primary_language[d$student_primary_language == "Cantonese; English; Mandarin"] <- "Cantonese"
+d$student_primary_language[d$student_primary_language == "English; French; Haitian Creole; Spanish"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; Other"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; Spanish"] <- "English"
+d$student_primary_language[d$student_primary_language == "French; Portuguese; Spanish"] <- "French"
+d$student_primary_language[d$student_primary_language == "English; French"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; Haitian Creole"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; Portuguese"] <- "English"
+d$student_primary_language[d$student_primary_language == "English; Vietnamese"] <- "English"
+d$student_primary_language[d$student_primary_language == "French; Haitian Creole"] <- "French"
+d$student_primary_language[d$student_primary_language == "Portuguese; Other"] <- "Portuguese"
+
+#clean year variable, change all "year 0" to NA
+d$year[d$year == '0'] <- NA
+d$year = as.factor(d$year) #change year variable to factor
+
+#clean employment status to show only primary, or first inputted status
+#slight selection bias because statuses are listed in alphabetical order
+d$employment_status[d$employment_status == "Part Time, Unemployed"] <- "Part Time"
+d$employment_status[d$employment_status == "Full Time, Unemployed"] <- "Full Time"
+d$employment_status[d$employment_status == "Part Time, Full Time"] <- "Part Time"
+
+#create new variable for languages as numeric values to be more interpretable in data set
+d$num_lang<- rep(NA, nrow(d))
+d$num_lang[is.na(d$num_lang)] <- ""
+d$num_lang = d$student_primary_language
+d$num_lang[d$num_lang == 'Albanian'] <- 1
+d$num_lang[d$num_lang == 'Amharic'] <- 2
+d$num_lang[d$num_lang == 'Arabic'] <- 3
+d$num_lang[d$num_lang == 'Cantonese'] <- 4
+d$num_lang[d$num_lang == 'Cape Verdean Creole'] <- 5
+d$num_lang[d$num_lang == 'English'] <- 6
+d$num_lang[d$num_lang == 'French'] <- 7
+d$num_lang[d$num_lang == 'Hatian Creole'] <- 8
+d$num_lang[d$num_lang == 'Mandarin'] <- 9
+d$num_lang[d$num_lang == 'Other'] <- 10
+d$num_lang[d$num_lang == 'Portugese'] <- 11
+d$num_lang[d$num_lang == 'Somali'] <- 12
+d$num_lang[d$num_lang == 'Spanish'] <- 13
+d$num_lang[d$num_lang == 'Vietnamese'] <- 14
+d$num_lang = as.numeric(d$num_lang)
+
+```
+
+```{r dataframe, warning = FALSE}
+#create new data frame with only categorical variables we are observing
+dnew<- data.frame(d$course_type, d$employment_status, d$household_income_level, d$student_primary_language)
+#view data frame 
+dnew
+```
+
+```{r summary, warning = FALSE}
+#get summary statistics of cleaned data as a whole and categorical data within data frame
+summary(d)
+summary(dnew)
+```
+```{r primary language, warning = FALSE}
+#explore primary language distribution within TGH 
+
+#create data frame with languages and language counts to manipulate into visuals
+df <- data.frame(
+  language = c('Albanian', 'Amharic', 'Arabic', 'Cantonese', 'Cape Verdean Creole', 'English', 'French', 'Hatian Creole', 'Mandarin', 'Other', 'Portugese', 'Somali', 'Spanish', 'Vietnamese'),
+  count = c(37, 69, 306, 574, 101, 12306, 255, 1663, 180, 344, 555, 174, 5535, 245)
+  )
+#view data frame
+head(df)
+
+#primary language distribution as a stacked bar chart 
+bp<- ggplot(df, aes(x="", y=count, fill=language)) +
+geom_bar(width = 1, stat = "identity")
+bp + theme_minimal() + xlab(" ") + ylab("Count") + ggtitle("TGH Primary Language Distribution")
+
+#primary language distribution as a pie graph
+pie <- bp + coord_polar("y", start=0)
+pie + theme_minimal() + ggtitle("TGH Primary Language Distribution") +  xlab("") + ylab("")
+
+```
+
+```{r course type, warning = FALSE}
+#course type distribution within TGH
+ggplot(d) + geom_bar(aes(x = course_type), fill = "pink") + theme_minimal() + xlab("Course Type") + ylab("Count") + ggtitle("TGH Course Types")
+
+#split course type into four categories (community, early childhood, small business, school) and visualize language distribution within TGH for each course type
+
+#community
+dcom<- d[d$course_type == c('Community'),]
+ggplot(dcom) + geom_bar(aes(x = student_primary_language), fill = "purple") + theme_minimal() + xlab("Community Primary Language") + ylab("Count") + ggtitle("TGH Community Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#early childhood
+dec<- d[d$course_type == c('Early Childhood'),]
+ggplot(dec) + geom_bar(aes(x = student_primary_language), fill = "pink") + theme_minimal() + xlab("Early Childhood Primary Language") + ylab("Count") + ggtitle("TGH Early Childhood Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#small business
+dsb<- d[d$course_type == c('Small Business'),]
+ggplot(dsb) + geom_bar(aes(x = student_primary_language), fill = "yellow") + theme_minimal() + xlab("Small Business Primary Language") + ylab("Count") + ggtitle("TGH Small Business Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#school
+dsch<- d[d$course_type == c('School'),]
+ggplot(dsch) + geom_bar(aes(x = student_primary_language), fill = "green") + theme_minimal() + xlab("School Primary Language") + ylab("Count") + ggtitle("TGH School Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r employment status, warning = FALSE}
+#employment status distribution within TGH
+ggplot(d) + geom_bar(aes(x = employment_status), fill = "orange") + theme_minimal() + xlab("Employment Status") + ylab("Count") + ggtitle("TGH Employment Status") 
+
+#initial language distribution within TGH (all four course types)
+ggplot(d) + geom_bar(aes(x = student_primary_language), fill = "blue") + theme_minimal() + xlab("Student Primary Language") + ylab("Count") + ggtitle("TGH Student Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#split employment status into five categories (full time, homemaker, part time, retired, unemployed) and visualize language distribution within TGH for each employment status
+
+#full time 
+dft<- d[d$employment_status == c('Full Time'),]
+ggplot(dft) + geom_bar(aes(x = student_primary_language), fill = "purple") + theme_minimal() + xlab("Full Time Primary Language") + ylab("Count") + ggtitle("TGH Full Time Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#homemaker
+dh<- d[d$employment_status == c('Homemaker'),]
+ggplot(dh) + geom_bar(aes(x = student_primary_language), fill = "pink") + theme_minimal() + xlab("Homemaker Primary Language") + ylab("Count") + ggtitle("TGH Homemaker Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#part time
+dpt<- d[d$employment_status == c('Part Time'),]
+ggplot(dpt) + geom_bar(aes(x = student_primary_language), fill = "yellow") + theme_minimal() + xlab("Part Time Primary Language") + ylab("Count") + ggtitle("TGH Part Time Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#retired
+dr<- d[d$employment_status == c('Retired'),]
+ggplot(dr) + geom_bar(aes(x = student_primary_language), fill = "green") + theme_minimal() + xlab("Retired Primary Language") + ylab("Count") + ggtitle("TGH Retired Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#unemployed
+du<- d[d$employment_status == c('Unemployed'),]
+ggplot(du) + geom_bar(aes(x = student_primary_language), fill = "blue") + theme_minimal() + xlab("Unemployed Primary Language") + ylab("Count") + ggtitle("TGH Unemployed Primary Language") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+```{r student grade, warning = FALSE}
+#student grade distribution within TGH
+ggplot(d) + geom_bar(aes(x = student_grade), fill = "purple") + theme_minimal() + xlab("Grade") + ylab("Count") + ggtitle("TGH Student Grade Distribution")
+
+boxplot(d$student_grade, main = 'TGH Student Grade Distribution', ylab = 'Grade', col = 'purple')
+
+#student grade based on student primary language
+boxplot(d$student_grade~d$student_primary_language, main = 'Student Grade based on Primary Language', xlab = '', ylab = ' Student Grade', names = c('Albanian', 'Amharic', 'Arabic', 'Cantonese', 'Cape Verdean Creole', 'English', 'French', 'Hatian Creole', 'Mandarin', 'Other', 'Portugese', 'Somali', 'Spanish', 'Vietnamese'), las=2, col =  c("Pink", "Red", "Orange", "Yellow", "Green", "Blue", "Purple","Pink", "Red", "Orange", "Yellow", "Green", "Blue", "Purple"))
+
+```
+
+
+```{r household income, warning = FALSE}
+#household income level distribution within TGH
+ggplot(d) + geom_bar(aes(x = household_income_level), fill = "blue") + theme_minimal() + xlab("Household Income Level") + ylab("Count") + ggtitle("TGH Household Income Level") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#create a data frame of household income level brackets and counts for visualizations
+df <- data.frame(
+  income = c('Between $20,000 - $24,999', 'Between $25,000 - $29,999', 'Between $30,000 - $34,999', 'Between $35,000 - $39,999  877', 'Between $40,000 - $44,999', 'Between $45,000 - $49,999', 'Over $50,000', 'Under $20,000'),
+  count = c(2495, 1519, 1314, 877, 688, 558, 1389, 8090)
+  )
+#view data frame
+head(df)
+
+#household income distribution as a stacked bar chart
+bp<- ggplot(df, aes(x="", y=count, fill=income)) +
+geom_bar(width = 1, stat = "identity")
+bp + theme_minimal() + xlab(" ") + ylab("Count") + ggtitle("TGH Household Income Distribution") + scale_fill_brewer(palette="Blues")
+
+#household income distribution as a pie chart
+pie <- bp + coord_polar("y", start=0)
+pie + theme_minimal() + ggtitle("TGH Household Income Distribution") +  xlab("") + ylab("") + scale_fill_brewer(palette="Blues")
+
+#household income level based on primary language
+#DECIDED NOT TO LOG HOUSEHOLD INCOME FOR VIEWER SIMPLICITY - log function is commented out in data cleaning section, but variable and cleaning is left there for more complex analysis
+par(mfrow=c(1,1))
+boxplot(d$log_household_income_level~d$student_primary_language, main = 'Household Income based on Primary Language', ylab = ' ', xlab = '', names = c('Albanian', 'Amharic', 'Arabic', 'Cantonese', 'Cape Verdean Creole', 'English', 'French', 'Hatian Creole', 'Mandarin', 'Other', 'Portugese', 'Somali', 'Spanish', 'Vietnamese'), las=2, col =  c("Pink", "Red", "Orange", "Yellow", "Green", "Blue", "Purple","Pink", "Red", "Orange", "Yellow", "Green", "Blue", "Purple"))
+par(las=1)
+
+```
+
+```{r year, warning = FALSE}
+#Participants by year distribution within TGH
+ggplot(d) + geom_bar(aes(x = year), fill = "blue") + theme_minimal() + xlab("Year") + ylab("Count") + ggtitle("TGH Participants by Year") 
+
+#summarize year to figure out categories after cleaning 
+summary(d$year)
+
+#split year into three categories for recorded years (2017, 2018, 2019) and visualize language distribution within TGH for each year
+
+#2017
+d2017<- d[d$year == c('2017'),]
+ggplot(d2017) + geom_bar(aes(x = student_primary_language), fill = "purple") + theme_minimal() + xlab("Primary Language") + ylab("Count") + ggtitle("TGH Primary Language 2017") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#2018
+d2018<- d[d$year == c('2018'),]
+ggplot(d2018) + geom_bar(aes(x = student_primary_language), fill = "pink") + theme_minimal() + xlab("Primary Language") + ylab("Count") + ggtitle("TGH Primary Language 2018") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#2019
+d2019<- d[d$year == c('2019'),]
+ggplot(d2019) + geom_bar(aes(x = student_primary_language), fill = "yellow") + theme_minimal() + xlab("Primary Language") + ylab("Count") + ggtitle("TGH Primary Language 2019") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
